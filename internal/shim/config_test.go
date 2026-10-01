@@ -13,7 +13,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	}
 	want := Config{
 		Job:         "rclone",
-		Commands:    map[string]bool{"sync": true, "copy": true, "move": true},
+		Commands:    map[string]bool{"sync": true, "copy": true, "move": true, "copyto": true, "moveto": true, "bisync": true},
 		Interval:    time.Second,
 		PushTimeout: 10 * time.Second,
 	}
@@ -68,7 +68,7 @@ func TestLoadConfig_IntervalClamped(t *testing.T) {
 
 func TestLoadConfig_EmptyCommandsUsesDefault(t *testing.T) {
 	cfg, _ := LoadConfig([]string{"RCLONESHIM_COMMANDS= , "})
-	if !cfg.Commands["sync"] || len(cfg.Commands) != 3 {
+	if !cfg.Commands["sync"] || len(cfg.Commands) != 6 {
 		t.Fatalf("got %v", cfg.Commands)
 	}
 }

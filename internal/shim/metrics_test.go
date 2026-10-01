@@ -54,6 +54,7 @@ func TestRenderShim_Success(t *testing.T) {
 	start := time.Unix(1_700_000_000, 0)
 	out := string(RenderShim(Result{Command: "sync", ExitCode: 0, Start: start, End: start.Add(90500 * time.Millisecond), Scraped: true, LastScrape: start.Add(90 * time.Second)}))
 	for _, want := range []string{
+		"rclone_shim_last_start_timestamp_seconds 1700000000.000\n",
 		"rclone_shim_exit_code 0\n",
 		"rclone_shim_duration_seconds 90.500\n",
 		"rclone_shim_last_run_timestamp_seconds 1700000090.500\n",
@@ -75,10 +76,11 @@ func TestRenderShim_FailureAndNoScrape(t *testing.T) {
 	if !strings.Contains(out, "rclone_shim_exit_code 7\n") || !strings.Contains(out, "rclone_shim_scrape_success 0\n") {
 		t.Fatalf("got:\n%s", out)
 	}
-	for _, absent := range []string{"last_success", "last_scrape_age"} {
-		if strings.Contains(out, absent) {
-			t.Fatalf("%s must be omitted:\n%s", absent, out)
-		}
+	if strings.Contains(out, "last_success") {
+		t.Fatalf("last_success must be omitted:\n%s", out)
+	}
+	if !strings.Contains(out, "rclone_shim_last_scrape_age_seconds NaN\n") {
+		t.Fatalf("scrape age must be NaN when nothing was scraped:\n%s", out)
 	}
 	assertHelpAndType(t, out)
 }
@@ -107,4 +109,12 @@ func assertHelpAndType(t *testing.T, out string) {
 			t.Fatalf("%s lacks HELP/TYPE", name)
 		}
 	}
+}
+
+func TestRenderStart(t *testing.T) {
+	out := string(RenderStart(time.Unix(1_700_000_000, 0)))
+	if !strings.Contains(out, "rclone_shim_last_start_timestamp_seconds 1700000000.000\n") {
+		t.Fatalf("got:\n%s", out)
+	}
+	assertHelpAndType(t, out)
 }

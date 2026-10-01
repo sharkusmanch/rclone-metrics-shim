@@ -53,12 +53,20 @@ func seconds(t time.Time) string {
 	return fmt.Sprintf("%.3f", float64(t.UnixMilli())/1000)
 }
 
+// RenderStart renders the single series pushed when a run begins. A group
+// whose start is newer than its last run is still running, or was killed.
+func RenderStart(start time.Time) []byte {
+	const name = "rclone_shim_last_start_timestamp_seconds"
+	return []byte(fmt.Sprintf("# HELP %s Unix time the last wrapped rclone run started.\n# TYPE %s gauge\n%s %s\n", name, name, name, seconds(start)))
+}
+
 // RenderShim renders the shim's own series in the Prometheus text format.
 func RenderShim(r Result) []byte {
 	var b bytes.Buffer
 	gauge := func(name, help, value string) {
 		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s gauge\n%s %s\n", name, help, name, name, value)
 	}
+	gauge("rclone_shim_last_start_timestamp_seconds", "Unix time the last wrapped rclone run started.", seconds(r.Start))
 	gauge("rclone_shim_exit_code", "Exit status of the last wrapped rclone run.", fmt.Sprint(r.ExitCode))
 	gauge("rclone_shim_duration_seconds", "Wall-clock duration of the last wrapped rclone run.",
 		fmt.Sprintf("%.3f", r.End.Sub(r.Start).Seconds()))
@@ -71,10 +79,12 @@ func RenderShim(r Result) []byte {
 		scraped = "1"
 	}
 	gauge("rclone_shim_scrape_success", "1 if rclone's metrics were scraped at least once during the last run.", scraped)
+	// Always emitted: with POST semantics an omitted series keeps its old value.
+	age := "NaN"
 	if r.Scraped {
-		gauge("rclone_shim_last_scrape_age_seconds", "Seconds between the last scrape and the end of the run; rclone_* series lag by this much.",
-			fmt.Sprintf("%.3f", r.End.Sub(r.LastScrape).Seconds()))
+		age = fmt.Sprintf("%.3f", r.End.Sub(r.LastScrape).Seconds())
 	}
+	gauge("rclone_shim_last_scrape_age_seconds", "Seconds between the last scrape and the end of the run; rclone_* series lag by this much. NaN when nothing was scraped.", age)
 	fmt.Fprintf(&b, "# HELP rclone_shim_info Shim version and the wrapped rclone command.\n# TYPE rclone_shim_info gauge\nrclone_shim_info{version=\"%s\",command=\"%s\"} 1\n",
 		labelEscaper.Replace(Version), labelEscaper.Replace(r.Command))
 	return b.Bytes()

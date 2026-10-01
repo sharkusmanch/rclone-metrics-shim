@@ -14,7 +14,7 @@ var Version = "dev"
 const (
 	envPrefix          = "RCLONESHIM_"
 	defaultJob         = "rclone"
-	defaultCommands    = "sync,copy,move"
+	defaultCommands    = "sync,copy,move,copyto,moveto,bisync"
 	defaultInterval    = time.Second
 	minInterval        = 100 * time.Millisecond
 	defaultPushTimeout = 10 * time.Second
