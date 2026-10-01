@@ -10,8 +10,9 @@ permissions:
   contents: read
 
 env:
-  # The rclone release the end-to-end tests drive through the shim.
-  RCLONE_VERSION: v1.75.1
+  # The rclone release the end-to-end tests drive through the shim. Not named
+  # RCLONE_VERSION: rclone reads RCLONE_* as flags and that one is --version.
+  E2E_RCLONE_VERSION: v1.75.1
 
 jobs:
   test:
@@ -38,9 +39,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - name: Install rclone ${{ env.RCLONE_VERSION }}
+      - name: Install rclone ${{ env.E2E_RCLONE_VERSION }}
         run: |
-          curl -fsSL -o rclone.zip "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip"
+          curl -fsSL -o rclone.zip "https://downloads.rclone.org/${E2E_RCLONE_VERSION}/rclone-${E2E_RCLONE_VERSION}-linux-amd64.zip"
           unzip -q -j rclone.zip '*/rclone' -d "$RUNNER_TEMP/rclone"
           "$RUNNER_TEMP/rclone/rclone" version
           echo "RCLONE_BIN=$RUNNER_TEMP/rclone/rclone" >> "$GITHUB_ENV"
@@ -61,5 +62,6 @@ jobs:
         run: |
           docker build -t shim:test .
           test "$(docker run --rm shim:test version)" = "dev"
+          mkdir out   # owned by the runner user; docker would create it as root
           docker run --rm -v "$PWD/out:/out" --user "$(id -u):$(id -g)" shim:test install /out/sbin/rclone
           test -x out/sbin/rclone

@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  RCLONE_VERSION: v1.75.1
+  E2E_RCLONE_VERSION: v1.75.1
 
 jobs:
   # Re-run the suite on the tagged commit rather than trusting a green branch build.
@@ -24,9 +24,9 @@ jobs:
           go-version: stable
       - run: go vet -tags e2e ./...
       - run: go test -race -count=1 ./...
-      - name: Install rclone ${{ env.RCLONE_VERSION }}
+      - name: Install rclone ${{ env.E2E_RCLONE_VERSION }}
         run: |
-          curl -fsSL -o rclone.zip "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip"
+          curl -fsSL -o rclone.zip "https://downloads.rclone.org/${E2E_RCLONE_VERSION}/rclone-${E2E_RCLONE_VERSION}-linux-amd64.zip"
           unzip -q -j rclone.zip '*/rclone' -d "$RUNNER_TEMP/rclone"
           echo "RCLONE_BIN=$RUNNER_TEMP/rclone/rclone" >> "$GITHUB_ENV"
       - run: go test -tags e2e -count=1 -run TestE2E ./internal/shim

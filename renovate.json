@@ -6,7 +6,7 @@
       "customType": "regex",
       "description": "rclone version the e2e tests run against",
       "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
-      "matchStrings": ["RCLONE_VERSION: (?<currentValue>v\\S+)"],
+      "matchStrings": ["E2E_RCLONE_VERSION: (?<currentValue>v\\S+)"],
       "depNameTemplate": "rclone/rclone",
       "datasourceTemplate": "github-releases"
     }
