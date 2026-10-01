@@ -71,8 +71,7 @@ func TestE2E_RealRcloneSync(t *testing.T) {
 	}
 
 	pgw := newPushRecorder(t)
-	cmd := exec.Command("rclone", "sync", src, dst, "--bwlimit", "10M")
-	cmd.Path = filepath.Join(work, "shim", "rclone")
+	cmd := exec.Command(filepath.Join(work, "shim", "rclone"), "sync", src, dst, "--bwlimit", "10M")
 	// RCLONE_LOCAL_NO_CLONE: on macOS a local copy is an instant APFS clone that
 	// ignores --bwlimit, leaving nothing to scrape. Set by env because the flag
 	// does not exist on every platform; an unknown RCLONE_* variable is ignored.
@@ -123,8 +122,7 @@ func TestE2E_RealRcloneLsfIsPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	pgw := newPushRecorder(t)
-	cmd := exec.Command("rclone", "lsf", src)
-	cmd.Path = filepath.Join(work, "shim", "rclone")
+	cmd := exec.Command(filepath.Join(work, "shim", "rclone"), "lsf", src)
 	cmd.Env = []string{"PATH=" + pathEnv, "HOME=" + work, "RCLONE_CONFIG=" + filepath.Join(work, "rclone.conf"),
 		"RCLONESHIM_PUSHGATEWAY_URL=" + pgw.URL}
 	out, err := cmd.Output()
@@ -154,8 +152,7 @@ func TestE2E_RealRcloneFailureStatus(t *testing.T) {
 		t.Fatal("expected the real rclone to fail on a missing source")
 	}
 
-	cmd := exec.Command("rclone", "sync", filepath.Join(work, "missing"), filepath.Join(work, "dst"))
-	cmd.Path = filepath.Join(work, "shim", "rclone")
+	cmd := exec.Command(filepath.Join(work, "shim", "rclone"), "sync", filepath.Join(work, "missing"), filepath.Join(work, "dst"))
 	cmd.Env = append(env, "RCLONESHIM_PUSHGATEWAY_URL="+pgw.URL)
 	_ = cmd.Run()
 	if got := cmd.ProcessState.ExitCode(); got != want {
