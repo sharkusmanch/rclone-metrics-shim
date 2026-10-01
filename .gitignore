@@ -1,0 +1,4 @@
+/rclone-metrics-shim
+/dist/
+*.test
+*.out
