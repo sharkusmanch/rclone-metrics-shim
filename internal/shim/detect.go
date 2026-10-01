@@ -1,6 +1,9 @@
 package shim
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // longBooleans are common rclone long flags that take no value. A non-flag
 // argument after one of these is the subcommand, not a flag value. The list
@@ -16,8 +19,12 @@ var longBooleans = map[string]bool{
 	"--help": true, "--version": true,
 }
 
-// isBoolean reports whether a flag argument certainly takes no value. Every
-// rclone single-dash shorthand is boolean except -f (--filter).
+// valueShorthands are the single-dash shorthands that take a value; whatever
+// follows one in a cluster (or the next argument) is that value. All other
+// rclone shorthands are boolean.
+const valueShorthands = "fFst"
+
+// isBoolean reports whether a flag argument certainly takes no value.
 func isBoolean(flag string) bool {
 	if strings.Contains(flag, "=") {
 		return true // value attached
@@ -25,34 +32,58 @@ func isBoolean(flag string) bool {
 	if strings.HasPrefix(flag, "--") {
 		return longBooleans[flag]
 	}
-	return !strings.Contains(flag, "f")
+	return !strings.ContainsAny(flag[1:], valueShorthands)
 }
 
-// noPushFlag reports whether an argument makes this run something whose
-// result must not be recorded: a dry run, an interactive run, or a help page.
-func noPushFlag(a string) bool {
-	switch a {
-	case "--dry-run", "--dry-run=true", "--interactive", "--interactive=true", "--help":
-		return true
-	}
-	if len(a) < 2 || a[0] != '-' || a[1] == '-' || strings.Contains(a, "=") {
-		return false
-	}
-	// A cluster of boolean shorthands such as -vn or -nP.
-	for _, c := range a[1:] {
-		if !strings.ContainsRune("vqPnihcILlMux", c) {
-			return false
+// parseBool reads a flag value the way rclone (pflag) does; an unparseable
+// value counts as true, which errs on the side of not recording the run.
+func parseBool(v string) bool {
+	b, err := strconv.ParseBool(v)
+	return err != nil || b
+}
+
+// unrecorded reports whether this invocation is a dry run, an interactive run
+// or a help page: runs whose result must never be pushed. An explicit flag
+// overrides the RCLONE_DRY_RUN / RCLONE_INTERACTIVE environment variables.
+func unrecorded(args, env []string) bool {
+	flags := map[byte]bool{}
+	for name, key := range map[string]byte{"RCLONE_DRY_RUN": 'n', "RCLONE_INTERACTIVE": 'i'} {
+		if v, ok := lookupEnv(env, name); ok && v != "" {
+			flags[key] = parseBool(v)
 		}
 	}
-	return strings.ContainsAny(a[1:], "nih")
-}
-
-func truthy(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "t", "true", "y", "yes":
-		return true
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if len(a) < 2 || a[0] != '-' {
+			continue
+		}
+		name, value, hasValue := strings.Cut(a, "=")
+		on := !hasValue || parseBool(value)
+		switch name {
+		case "--dry-run":
+			flags['n'] = on
+		case "--interactive":
+			flags['i'] = on
+		case "--help":
+			flags['h'] = on
+		}
+		if strings.HasPrefix(name, "--") {
+			continue
+		}
+		// A shorthand cluster such as -vn or -1n; =value belongs to its last flag.
+		for i := 1; i < len(name); i++ {
+			c := name[i]
+			if strings.IndexByte(valueShorthands, c) >= 0 {
+				break // the rest of the cluster is this flag's value
+			}
+			if c == 'n' || c == 'i' || c == 'h' {
+				flags[c] = i < len(name)-1 || on
+			}
+		}
 	}
-	return false
+	return flags['n'] || flags['i'] || flags['h']
 }
 
 // WrapDecision decides what to do with an rclone invocation.
@@ -94,18 +125,8 @@ func WrapDecision(args []string, cfg Config, env []string) (command string, wrap
 	if command == "" {
 		return "", false, false
 	}
-	for _, a := range args {
-		if a == "--" {
-			break
-		}
-		if noPushFlag(a) {
-			return "", false, false
-		}
-	}
-	for _, name := range []string{"RCLONE_DRY_RUN", "RCLONE_INTERACTIVE"} {
-		if v, ok := lookupEnv(env, name); ok && truthy(v) {
-			return "", false, false
-		}
+	if unrecorded(args, env) {
+		return "", false, false
 	}
 	scrape = true
 	if _, set := lookupEnv(env, "RCLONE_METRICS_ADDR"); set {

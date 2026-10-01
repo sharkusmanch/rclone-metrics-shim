@@ -82,3 +82,29 @@ func TestFindReal_NotFound(t *testing.T) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
+
+// Two copies of the shim on PATH must resolve forward to the real binary, not
+// to each other: each searches only the entries after its own directory.
+func TestFindReal_TwoShimsResolveForward(t *testing.T) {
+	d := t.TempDir()
+	a, b, real := filepath.Join(d, "a", "rclone"), filepath.Join(d, "b", "rclone"), filepath.Join(d, "c", "rclone")
+	writeExe(t, a, 0o755)
+	writeExe(t, b, 0o755)
+	writeExe(t, real, 0o755)
+	path := strings.Join([]string{filepath.Join(d, "a"), filepath.Join(d, "b"), filepath.Join(d, "c")}, ":")
+	if got, _ := FindReal(path, a, ""); got != b {
+		t.Fatalf("a found %q, want b", got)
+	}
+	if got, _ := FindReal(path, b, ""); got != real {
+		t.Fatalf("b found %q, want the real binary (never back to a)", got)
+	}
+}
+
+func TestFindReal_OverrideIsShim(t *testing.T) {
+	d := t.TempDir()
+	self := filepath.Join(d, "rclone")
+	writeExe(t, self, 0o755)
+	if _, err := FindReal("", self, self); !errors.Is(err, ErrIsShim) {
+		t.Fatalf("want ErrIsShim, got %v", err)
+	}
+}

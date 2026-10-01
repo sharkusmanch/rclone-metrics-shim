@@ -35,7 +35,11 @@ func TestMain(m *testing.M) {
 	if os.Getenv("SHIM_FAKE_RCLONE") == "1" {
 		fakeRclone()
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if builtShim != "" {
+		os.RemoveAll(filepath.Dir(builtShim))
+	}
+	os.Exit(code)
 }
 
 func fakeRclone() {
@@ -73,7 +77,7 @@ func fakeRclone() {
 
 	if os.Getenv("FAKE_WAIT_SIGNAL") == "1" {
 		c := make(chan os.Signal, 8)
-		signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP, syscall.SIGUSR1)
+		signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP, syscall.SIGUSR1, syscall.SIGUSR2, syscall.SIGQUIT)
 		if path := os.Getenv("FAKE_READY"); path != "" {
 			_ = os.WriteFile(path, []byte("ready"), 0o644)
 		}
@@ -199,7 +203,7 @@ func newHarness(t *testing.T, extraEnv ...string) *harness {
 }
 
 func (h *harness) run(args ...string) int {
-	return Run("rclone", args, h.env, "", Stdio{In: h.in, Out: h.outFile, Err: h.errFile})
+	return Run("/called/as/rclone", args, h.env, "", Stdio{In: h.in, Out: h.outFile, Err: h.errFile})
 }
 
 func (h *harness) rec() fakeRecord {
@@ -243,7 +247,7 @@ func TestRun_PassesArgsAndExitCode(t *testing.T) {
 			t.Fatalf("exit %d, want %d", got, code)
 		}
 		rec := h.rec()
-		if want := append([]string{"rclone"}, args...); fmt.Sprintf("%q", rec.Args) != fmt.Sprintf("%q", want) {
+		if want := append([]string{"/called/as/rclone"}, args...); fmt.Sprintf("%q", rec.Args) != fmt.Sprintf("%q", want) {
 			t.Fatalf("args %q, want %q", rec.Args, want)
 		}
 	}
@@ -499,8 +503,9 @@ func TestRun_PassthroughExecsUnchanged(t *testing.T) {
 		if got.argv[0] != "/some/path/rclone" || fmt.Sprintf("%q", got.argv[1:]) != fmt.Sprintf("%q", c.args) {
 			t.Fatalf("%s: argv %q", name, got.argv)
 		}
-		if fmt.Sprintf("%q", got.env) != fmt.Sprintf("%q", h.env) {
-			t.Fatalf("%s: env changed", name)
+		// The environment is the caller's plus the recursion guard, nothing else.
+		if want := append(append([]string(nil), h.env...), "RCLONESHIM_DEPTH=1"); fmt.Sprintf("%q", got.env) != fmt.Sprintf("%q", want) {
+			t.Fatalf("%s: env %q", name, got.env)
 		}
 		if !strings.HasSuffix(got.path, "/bin/rclone") {
 			t.Fatalf("%s: path %q", name, got.path)
@@ -682,7 +687,7 @@ func TestShim_ForwardsSignals(t *testing.T) {
 	if s.rec().Pid == s.cmd.Process.Pid {
 		t.Fatal("wrapped mode must run rclone as a child")
 	}
-	for i, sig := range []syscall.Signal{syscall.SIGUSR1, syscall.SIGHUP, syscall.SIGINT} {
+	for i, sig := range []syscall.Signal{syscall.SIGUSR1, syscall.SIGHUP, syscall.SIGINT, syscall.SIGUSR2, syscall.SIGQUIT} {
 		_ = s.cmd.Process.Signal(sig)
 		waitFor(t, sig.String(), func() bool { return len(s.receivedSignals()) == i+1 })
 	}
@@ -690,7 +695,7 @@ func TestShim_ForwardsSignals(t *testing.T) {
 	if code := s.wait(); code != 143 {
 		t.Fatalf("exit %d, want 143 (128+SIGTERM)", code)
 	}
-	want := []string{syscall.SIGUSR1.String(), syscall.SIGHUP.String(), syscall.SIGINT.String(), syscall.SIGTERM.String()}
+	want := []string{syscall.SIGUSR1.String(), syscall.SIGHUP.String(), syscall.SIGINT.String(), syscall.SIGUSR2.String(), syscall.SIGQUIT.String(), syscall.SIGTERM.String()}
 	if got := s.receivedSignals(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("child received %q, want %q", got, want)
 	}
@@ -806,5 +811,47 @@ func TestCLI(t *testing.T) {
 	}
 	if _, _, code := run("install", "/proc/nonexistent/x/rclone"); code != 1 {
 		t.Fatalf("failed install must exit 1, got %d", code)
+	}
+}
+
+func TestRun_RecursionGuard(t *testing.T) {
+	pgw := newPushRecorder(t)
+	h := newHarness(t, "RCLONESHIM_PUSHGATEWAY_URL="+pgw.URL, "RCLONESHIM_DEPTH=4")
+	if code := h.run("sync", "a", "b"); code != 127 {
+		t.Fatalf("exit %d, want 127", code)
+	}
+	if _, err := os.Stat(h.record); err == nil {
+		t.Fatal("the child must not be started once the depth limit is reached")
+	}
+	if lines := shimLines(h.read(h.errFile)); len(lines) != 1 || !strings.Contains(lines[0], "recursion") {
+		t.Fatalf("stderr %q", lines)
+	}
+}
+
+// A shim started by another shim must not wrap again: one run, one push.
+func TestRun_NestedShimPassesThrough(t *testing.T) {
+	called := false
+	old := execve
+	execve = func(string, []string, []string) error { called = true; return syscall.ENOEXEC }
+	defer func() { execve = old }()
+	pgw := newPushRecorder(t)
+	h := newHarness(t, "RCLONESHIM_PUSHGATEWAY_URL="+pgw.URL, "RCLONESHIM_DEPTH=1")
+	h.run("sync", "a", "b")
+	if !called || len(pgw.all()) != 0 {
+		t.Fatalf("execve=%v pushes=%d", called, len(pgw.all()))
+	}
+}
+
+func TestRun_UnusableSocketDirStillRuns(t *testing.T) {
+	old := probe
+	probe = func(string) error { return syscall.EOPNOTSUPP }
+	defer func() { probe = old }()
+	pgw := newPushRecorder(t)
+	h := newHarness(t, "RCLONESHIM_PUSHGATEWAY_URL="+pgw.URL, "FAKE_EXIT=2")
+	if code := h.run("sync", "a", "b"); code != 2 {
+		t.Fatalf("exit %d", code)
+	}
+	if h.rec().HasAddr {
+		t.Fatal("rclone must not be given a metrics address it cannot bind: it treats that as fatal")
 	}
 }

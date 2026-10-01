@@ -34,6 +34,9 @@ What the shim does change, when it wraps a run:
 - rclone runs as a child of the shim rather than in its place.
 - The child gets `RCLONE_METRICS_ADDR=unix://<tmpdir>/m.sock` in its environment, unless you
   configured a metrics address yourself.
+- rclone's environment gains `RCLONESHIM_DEPTH`, a guard that stops a shim which finds
+  another shim from looping. A shim started by a shim never wraps a second time.
+- At `-vv`, rclone logs one extra line: `DEBUG : Setting --metrics-addr … from environment variable`.
 - If the shim is killed with `SIGKILL`, rclone is killed too on Linux. On other systems it
   keeps running, and the shim's temp directory (`$TMPDIR/rclone-shim-*`) is left behind.
 
@@ -175,8 +178,11 @@ volumes:
 ```
 
 It runs as any uid with a read-only root filesystem and no capabilities. It needs a writable
-temp directory for its socket; without one the run proceeds and only rclone's own series are
-missing. If the pod's egress is restricted, allow TCP to the Pushgateway.
+temp directory for its socket. rclone treats a metrics address it cannot bind as fatal, so the
+shim first proves it can create a socket there; if it cannot, the run proceeds without one and
+only rclone's own series are missing. One case the probe cannot see: a real rclone confined to
+a private `/tmp` (a snap, for instance). Point `TMPDIR` somewhere both can reach, or set
+`RCLONE_METRICS_ADDR` yourself. If the pod's egress is restricted, allow TCP to the Pushgateway.
 
 When the container's command is a shell script, the shell is PID 1 and receives the pod's
 `SIGTERM`; it does not pass it on, so rclone and the shim are killed at the end of the grace
@@ -200,8 +206,8 @@ single-dash shorthands and a short list of common long flags are known to be boo
 
 The one imprecision: a long boolean flag the shim does not know, placed *before* the command,
 makes the command look like that flag's value. `rclone --some-new-bool lsf sync` is then
-treated as a `sync`. The cost is one unneeded push. Put global flags after the command, or
-use the `--flag=value` form, and it cannot happen.
+treated as a `sync`, and its result overwrites that instance's exit code and timestamps. Put
+global flags after the command, or use the `--flag=value` form, and it cannot happen.
 
 ## Development
 

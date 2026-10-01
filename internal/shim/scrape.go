@@ -81,9 +81,9 @@ func (s *Scraper) scrapeOnce() bool {
 	if resp.StatusCode != http.StatusOK {
 		return false
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxScrapeBytes))
-	if err != nil {
-		return false
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxScrapeBytes+1))
+	if err != nil || len(body) > maxScrapeBytes {
+		return false // a truncated exposition would be rejected by the Pushgateway
 	}
 	s.mu.Lock()
 	s.body, s.at = body, time.Now()
