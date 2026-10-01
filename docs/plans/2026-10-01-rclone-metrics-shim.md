@@ -472,7 +472,28 @@ Pilot on one job, verify, then the rest. All in
 - [ ] Roll the same three changes to `backup-sync`, `immich-photos-sync`, `books-sync`
       (instances named after the controllers); update `README.md` there.
 
-## 6. Self-review
+## 6. Amendments after the plan review
+
+An independent review of sections 1-5 found no blockers and a set of should-fixes. These were
+adopted and supersede the text above where they differ; the README describes the result.
+
+| Finding | Change |
+|---|---|
+| A killed run (pod deadline, OOM, `SIGKILL`) never reaches the push, so the old exit code stays | Push `rclone_shim_last_start_timestamp_seconds` as the run begins, concurrently with the child; alert on start newer than last run |
+| A signal during the final push killed the shim | Signals stay handled until return; one arriving after the child exited cancels the push and the child's status is returned |
+| Ctrl-C reached rclone twice (terminal + relay) | `SIGINT`/`SIGQUIT` are not relayed while the shim is in the terminal's foreground process group |
+| `nohup` immunity was lost | Signals that are ignored on entry are not relayed |
+| A warning written to a closed stderr killed the shim with `SIGPIPE` | `SIGPIPE` is caught in wrapped mode; write errors ignored |
+| `SIGKILL` of the shim orphaned rclone | `Pdeathsig=SIGKILL` on Linux; documented elsewhere |
+| Dry runs and help pages pushed a "success" | `--dry-run`, `-n`, `--interactive`, `-i`, `--help`, `-h` (and `RCLONE_DRY_RUN`) are passthrough |
+| Flag values named like commands were matched after a boolean flag | Single-dash shorthands (except `-f`) and common long booleans are known to take no value; default set widened to `copyto`, `moveto`, `bisync` |
+| An omitted series keeps its old value under POST | `rclone_shim_last_scrape_age_seconds` is always emitted (`NaN` when nothing was scraped) |
+| `argv[0]` was rewritten to `rclone` | The caller's `argv[0]` is passed on; `Run` takes it as its first parameter |
+| Signal test raced handler installation; passthrough test asserted the wrong pid | Subprocess tests gated on a ready file; passthrough asserts the fake's pid equals the shim's pid |
+
+Not adopted: sweeping stale temp directories (documented instead), and exact final totals.
+
+## 7. Self-review
 
 - Spec coverage: every row of §1.3 maps to a Task 7 test; §1.5 → Task 1; §1.6 → Task 2;
   §1.7 → Task 3; §1.8 → Task 6; §1.9 → Tasks 4, 5, 7; §1.4 → Task 8.

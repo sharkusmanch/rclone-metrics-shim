@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "rclone version the e2e tests run against",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["RCLONE_VERSION: (?<currentValue>v\\S+)"],
+      "depNameTemplate": "rclone/rclone",
+      "datasourceTemplate": "github-releases"
+    }
+  ]
+}
