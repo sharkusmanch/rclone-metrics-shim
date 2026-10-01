@@ -102,8 +102,9 @@ From the shim (gauges):
 From rclone itself, forwarded unchanged (v1.75): `rclone_bytes_transferred_total`,
 `rclone_files_transferred_total`, `rclone_files_deleted_total`, `rclone_dirs_deleted_total`,
 `rclone_files_renamed_total`, `rclone_checked_files_total`, `rclone_entries_listed_total`,
-`rclone_errors_total`, `rclone_fatal_error`, `rclone_retry_error`, `rclone_speed`. rclone's Go
-runtime and process series are dropped.
+`rclone_errors_total`, `rclone_fatal_error`, `rclone_retry_error`, `rclone_speed`, and for
+HTTP-based remotes `rclone_http_status_code{host,method,code}`. rclone's Go runtime and
+process series are dropped.
 
 ### Read this before writing alerts
 
